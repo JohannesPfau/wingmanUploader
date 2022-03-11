@@ -3,5 +3,6 @@ GW2EI*/
 output/
 forceMode/
 .idea/
+wingmanUploader.exclude
 wingmanUploader.ini
 wingmanUploader.exclude

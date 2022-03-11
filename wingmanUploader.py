@@ -15,19 +15,21 @@ import subprocess
 from win32api import *
 from win32gui import *
 from sysTrayIcon import *
-from win32com.shell import shell, shellcon
+# from win32com.shell import shell, shellcon
 from win32com.client import Dispatch
 import winshell
 import datetime
 import zipfile
+import io
 
-VERSION = "0.0.18"
+VERSION = "0.0.19"
 
 testURL = "https://gw2wingman.nevermindcreations.de/testMongoDB"
 versionURL = "https://gw2wingman.nevermindcreations.de/currentUploaderVersion"
 uploadURL = "https://gw2wingman.nevermindcreations.de/upload"
 uploadProcessedURL = "https://gw2wingman.nevermindcreations.de/uploadProcessed"
 checkUploadURL = "https://gw2wingman.nevermindcreations.de/checkUpload"
+EIreleasesURL = "https://api.github.com/repos/baaron4/GW2-Elite-Insights-Parser/releases"
 gw2EIconf = "SaveAtOut=true\n\
 SaveOutHTML=true\n\
 ParseCombatReplay=true\n\
@@ -84,6 +86,11 @@ def checkConfig():
 
 discMsgDisplayed = False
 def startUploadingProcess():
+    global notificationString
+    if notificationString:
+        tryNotification(notificationString, True)
+        notificationString = None
+
     if (config['onlyUploadIfGw2NotRunning'] and isGW2Running()) or (config['onlyUploadIfGw2Running'] and not isGW2Running()):
         sysTrayApp.changeMenuEntry("Status: SLEEPING")
         if verbose:
@@ -99,8 +106,8 @@ def startUploadingProcess():
                 blacklist = json.load(blacklistFile)
                 if blacklist.keys().__contains__('lastUpdate'):
                     del blacklist['lastUpdate']
-        except error:
-            print(error)
+        except:
+            pass
     else:
         # blacklist = {"lastUpdate": 0, "excludeFiles": []}
         blacklist = {"excludeFiles": []}
@@ -240,6 +247,7 @@ def startUploadingProcess():
                                             # TODO: only +1 if really uploaded! else "continue"
                                             if r.text != "True":
                                                 print(r.text)
+                                                filesFailed += 1
                                                 continue
 
                                             filesUploaded += 1
@@ -247,6 +255,7 @@ def startUploadingProcess():
                                                 print("[" + str(int(100 * (filesUploaded + filesFailed) / len(filesToUpload))) + "%] (" + str(len(filesToUpload) - (filesUploaded + filesFailed)) + " left). DONE: " + f.name)
                                     except:
                                         print("FAILED to parse: " + directory + rf)
+                                        filesFailed += 1
                                         os.remove(directory + htmlfile)
                                         os.remove(directory + rf)
                                         continue
@@ -295,7 +304,10 @@ def tryCreateAutostart():
     return
 
 def tryNotification(message):
-    if config['notifications']:
+    return tryNotification(message,False)
+
+def tryNotification(message, forceNotification):
+    if forceNotification or config['notifications']:
         notificationThread = threading.Thread(target=notificationWindow.ShowWindow, args={message, "Wingman Uploader"})
         notificationThread.setDaemon(True)
         notificationThread.start()
@@ -323,14 +335,28 @@ if __name__ == '__main__':
     if not os.path.exists("favicon.ico"):
         ctypes.windll.user32.MessageBoxW(0, "Hey! It seems that you have lost 'favicon.ico'. Please put this in the same folder or download the uploader again.", "gw2Wingman Uploader", 0)
         sys.exit(1)
-    if not os.path.exists("GW2EI/GuildWars2EliteInsights.exe"):
-        ctypes.windll.user32.MessageBoxW(0, "Hey! It seems that 'GW2EI' is not in the same folder as this exe. Please move it here or download the uploader again.", "gw2Wingman Uploader", 0)
-        sys.exit(1)
-    version = Dispatch("Scripting.FileSystemObject").GetFileVersion("GW2EI/GuildWars2EliteInsights.exe")
-    targetEIversion = "2.41.0.0"
-    if not version == targetEIversion:
-        ctypes.windll.user32.MessageBoxW(0, "Hey! You are using an old version of GW2EI. Please update this or simple re-download the gw2wingman uploader (keep your .ini and .exclude though).", "gw2Wingman Uploader", 0)
-        sys.exit(1)
+    localEIversion = ""
+    if os.path.exists("GW2EI/GuildWars2EliteInsights.exe"):
+        localEIversion = Dispatch("Scripting.FileSystemObject").GetFileVersion("GW2EI/GuildWars2EliteInsights.exe")
+    localEIversion = "v" + localEIversion
+    EIrequest = requests.get(EIreleasesURL).json()
+    recentEIversion = EIrequest[0]["name"]
+    # print("Compare:", localEIversion, recentEIversion, localEIversion==recentEIversion)
+
+    if not localEIversion==recentEIversion:
+        for asset in EIrequest[0]["assets"]:
+            if asset["name"] == "GW2EI.zip":
+                assetURL = asset["browser_download_url"]
+                print("download", asset["browser_download_url"])
+                eizip_r = requests.get(asset["browser_download_url"])
+                if not eizip_r.ok:
+                    ctypes.windll.user32.MessageBoxW(0, "I was unable to update the most recent Elite Insights version! You might want to report this.", "gw2Wingman Uploader", 0)
+                    sys.exit(1)
+                eizip = zipfile.ZipFile(io.BytesIO(eizip_r.content))
+                eizip.extractall("GW2EI")
+                global notificationString
+                notificationString = "Updated EliteInsights version to " + recentEIversion + "."
+                break
 
     icons = itertools.cycle(glob.glob('*.ico'))
     icon = next(icons)
@@ -360,9 +386,12 @@ if __name__ == '__main__':
         shutdown = False
         try:
             versionR = requests.get(versionURL)
-            if versionR.text.replace("!","") != VERSION:
+            if "Error" in versionR.text:
+                response = ctypes.windll.user32.MessageBoxW(0,"I was not able to reach the wingman server :( \r\nPlease try again later.","gw2Wingman Uploader", 1)
+                shutdown = True
+            elif versionR.text.replace("!","") != VERSION:
                 if not versionR.text.__contains__("!"):
-                    response = ctypes.windll.user32.MessageBoxW(0,"A new version is available!.\r\nPress OK to download the update and replace the wingmanUploader.exe","gw2Wingman Uploader", 1)
+                    response = ctypes.windll.user32.MessageBoxW(0,"A new version is available!\r\nPress OK to download the update and replace the wingmanUploader.exe","gw2Wingman Uploader", 1)
                     if response == 1: # OK
                         os.startfile("https://gw2wingman.nevermindcreations.de/downloadUploader")
                 else:
