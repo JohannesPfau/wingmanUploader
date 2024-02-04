@@ -5,3 +5,4 @@ forceMode/
 .idea/
 wingmanUploader.ini
 wingmanUploader.exclude
+.deprecated/
