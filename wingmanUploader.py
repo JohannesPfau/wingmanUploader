@@ -29,7 +29,7 @@ versionURL = "http://nevermindcreations.de:3500/currentUploaderVersion"
 # uploadURL = "http://nevermindcreations.de:3500/upload"
 uploadProcessedURL = "http://nevermindcreations.de:3500/uploadProcessed"
 checkUploadURL = "http://nevermindcreations.de:3500/checkUpload"
-EIreleasesURL = "https://api.github.com/repos/baaron4/GW2-Elite-Insights-Parser/releases"
+EIreleasesURL = "https://api.github.com/repos/baaron4/GW2-Elite-Insights-Parser/releases/latest"
 
 initialConfig = {
     'logpath': '',
@@ -381,10 +381,10 @@ if __name__ == '__main__':
         localEIversion = Dispatch("Scripting.FileSystemObject").GetFileVersion("GW2EI/GuildWars2EliteInsights.exe")
     localEIversion = "v" + localEIversion
     EIrequest = requests.get(EIreleasesURL).json()
-    recentEIversion = EIrequest[0]["name"]
+    recentEIversion = EIrequest["name"]
 
-    if not localEIversion==recentEIversion and not localEIversion == 'v2.64.0.0': # TODO: Remove after EI 64 release
-        for asset in EIrequest[0]["assets"]:
+    if not localEIversion==recentEIversion:
+        for asset in EIrequest["assets"]:
             if asset["name"] == "GW2EI.zip":
                 assetURL = asset["browser_download_url"]
                 print("download", asset["browser_download_url"])
