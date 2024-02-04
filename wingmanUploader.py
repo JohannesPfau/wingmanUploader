@@ -30,10 +30,6 @@ versionURL = "http://nevermindcreations.de:3500/currentUploaderVersion"
 uploadProcessedURL = "http://nevermindcreations.de:3500/uploadProcessed"
 checkUploadURL = "http://nevermindcreations.de:3500/checkUpload"
 EIreleasesURL = "https://api.github.com/repos/baaron4/GW2-Elite-Insights-Parser/releases"
-gw2EIconf = "SaveAtOut=true\n\
-SaveOutHTML=true\n\
-ParseCombatReplay=true\n\
-SaveOutJSON=true"
 
 initialConfig = {
     'logpath': '',
@@ -42,11 +38,38 @@ initialConfig = {
     'onlyUploadIfGw2Running': False,
     'onlyUploadIfGw2NotRunning': False,
     'notifications': False,
+    'SaveOutTrace': False,
+    'checkIntervalSeconds': 10
     # 'forceMode': False,
 }
+
 config = {}
 verbose = True
 notificationString = ""
+
+def getgw2EIconfNEWVERSION():
+    conf = "SaveAtOut=false\n\
+OutLocation="+os.getcwd().replace("\\","/").replace("//","/")+"\n\
+ParseCombatReplay=true\n\
+UploadToWingman=true\n\
+SaveOutJSON=false\n\
+SaveOutHTML=false\n"
+    if not "SaveOutTrace" in config:
+        conf += "SaveOutTrace=false"
+    else:
+        conf += "SaveOutTrace=" + str(config["SaveOutTrace"]).lower()
+    return conf
+
+def getCheckInterval():
+    if not config or not "checkIntervalSeconds" in config:
+        return 10
+    try:
+        seconds = int(config["checkIntervalSeconds"])
+        if seconds <= 1:
+            return 1
+    except:
+        return 10
+    return seconds
 
 def checkConfig():
     # config #
@@ -67,15 +90,20 @@ def checkConfig():
             configUpdated = True
 
     # check logpath
-    if not config['logpath'] == "":
-        path = os.path.abspath(config['logpath']).replace("\\", "/")
+    if config['logpath'] == "":
+        config['logpath'] = os.getcwd().replace("\\", "/")
+        configUpdated = True
+    path = os.path.abspath(config['logpath']).replace("\\", "/")
+    if not config['logpath'].endswith("/"):
+        config['logpath'] += "/"
+        configUpdated = True
+    if not os.path.exists(path):
+        ctypes.windll.user32.MessageBoxW(0,"The logpath you configured does not exist. I set it to my current directory instead.", "gw2Wingman Uploader", 0)
+        config['logpath'] = os.getcwd().replace("\\", "/")
         if not config['logpath'].endswith("/"):
             config['logpath'] += "/"
-            configUpdated = True
-        if not os.path.exists(path):
-            ctypes.windll.user32.MessageBoxW(0,"The logpath you configured does not exist. I set it to my current directory instead.", "gw2Wingman Uploader", 0)
-            config['logpath'] = ""
-            configUpdated = True
+        configUpdated = True
+
     # check account
     if config['account'].startswith("Account."):
         ctypes.windll.user32.MessageBoxW(0, "You did not specify your account name in the .ini - Please add this as it will accelerate the upload significantly.\r\n(We check each log for duplicates, but have to process it first to get the involved account names. If you specify your account in the ini, this process can be skipped and your logs will be uploaded way faster!)", "gw2Wingman Uploader", 0)
@@ -86,6 +114,23 @@ def checkConfig():
     return [configPresent, config]
 
 discMsgDisplayed = False
+
+def tidyUp(root):
+    deleted = set()
+
+    for current_dir, subdirs, files in os.walk(root, topdown=False):
+        still_has_subdirs = False
+        for subdir in subdirs:
+            if os.path.join(current_dir, subdir) not in deleted:
+                still_has_subdirs = True
+                break
+
+        if current_dir != root and not ".wingmanIgnore" in current_dir and not ".wingmanUploaded" in current_dir and not any(files) and not still_has_subdirs:
+            os.rmdir(current_dir)
+            deleted.add(current_dir)
+
+    return deleted
+
 def startUploadingProcess():
     global notificationString
     if notificationString:
@@ -100,35 +145,60 @@ def startUploadingProcess():
         rethreadUploadingProcess()
         return
 
-    # blacklist #
+    # Legacy: if .exclude exists, move all handled files first #
+    if not os.path.exists(os.path.join(config['logpath'], ".wingmanUploaded")):
+        os.mkdir(os.path.join(config['logpath'], ".wingmanUploaded"))
+    if not os.path.exists(os.path.join(config['logpath'], ".wingmanIgnore")):
+        os.mkdir(os.path.join(config['logpath'], ".wingmanIgnore"))
     if os.path.exists('wingmanUploader.exclude'):
+        ctypes.windll.user32.MessageBoxW(0, "Your uploader still uses an .exclude file\r\nTo accelerate things and reduce reading/writing on your HDD, we reworked that system. \r\nThe uploader will now migrate your already uploaded logs into a folder called \".wingmanUploaded\" \r\nIf you ever want to re-upload a log, you can just move it back to the default folder.\r\nIf you want to prevent a log from being uploaded, you can also move it to .wingmanUploaded or .wingmanIgnore", "gw2Wingman Uploader", 0)
+        sysTrayApp.changeMenuEntry("Status: MIGRATING (0%)")
         try:
             with open('wingmanUploader.exclude', 'r', encoding='utf-8') as blacklistFile:
                 blacklist = json.load(blacklistFile)
                 if blacklist.keys().__contains__('lastUpdate'):
                     del blacklist['lastUpdate']
+                excludeLen = len(blacklist["excludeFiles"])
+                migratedI = 0
+                # Migrate walk
+                for r, d, f in os.walk(config['logpath']):
+                    if ".wingmanUploaded" in r or ".wingmanIgnore" in r:
+                        continue
+                    for file in f:
+                        args = os.path.join(r, file).replace("\\","/").replace("//","/")
+                        if (not args.endswith(".zevtc") and not args.endswith(".evtc") and not args.endswith(".evtc.zip")) or os.path.getsize(args) < 100:
+                            continue
+                        if file in blacklist['excludeFiles']:
+                            # move to .uploaded
+                            newDir = os.path.join(config['logpath'], ".wingmanUploaded", args[len(config['logpath']):]).replace("\\","/").replace("//","/")
+                            newDir = os.path.dirname(newDir)
+
+                            if not os.path.exists(newDir):
+                                os.makedirs(newDir)
+                            newPath = os.path.join(config['logpath'], ".wingmanUploaded", args[len(config['logpath']):]).replace("\\","/").replace("//","/")
+                            os.rename(args, newPath)
+
+                            migratedI += 1
+                            sysTrayApp.changeMenuEntry("Status: MIGRATING ("+str(migratedI)+"/"+str(excludeLen)+": "+str(int(100*migratedI/excludeLen))+"%)")
+                            blacklist['excludeFiles'].remove(file)
+            os.remove('wingmanUploader.exclude')
         except:
+            ctypes.windll.user32.MessageBoxW(0, "Error while migrating old logs from the .exclude file to .wingmanUploaded", "gw2Wingman Uploader", 0)
             pass
-    else:
-        # blacklist = {"lastUpdate": 0, "excludeFiles": []}
-        blacklist = {"excludeFiles": []}
-        with open('wingmanUploader.exclude', 'w') as outfile:
-            json.dump(blacklist, outfile)
 
     # look for new logs #
     filesToUpload = []
     fileTimes = []
     for r, d, f in os.walk(config['logpath']):
+        if ".wingmanUploaded" in r or ".wingmanIgnore" in r:
+            continue
         for file in f:
             args = r + "/" + file
             if not args.endswith(".zevtc") and not args.endswith(".evtc") and not args.endswith(".evtc.zip"):
                 continue
-            # if os.path.getmtime(args) < blacklist['lastUpdate']:    # skip old files
-            #     continue
             if os.path.getsize(args) < 100:  # skip small files
                 continue
-            if blacklist['excludeFiles'].__contains__(file):  # skip excluded files
-                continue
+            args = args.replace("//","/")
             filesToUpload.append(args)
             fileTimes.append(os.path.getmtime(args))
 
@@ -186,95 +256,67 @@ def startUploadingProcess():
             except:
                 print("Not able to zevtc")
 
-        try:
-            with open(fileToUpload, 'rb') as f:
-                filename = os.path.basename(f.name)
+        # try:
+        moveFile = False
+        with open(fileToUpload, 'rb') as f:
+            filename = os.path.basename(f.name)
 
-                # check if needs to be uploaded
-                payload = {'file': filename, 'filesize': os.stat(fileToUpload).st_size, 'account': config['account'],
-                           'timestamp': int(os.stat(fileToUpload).st_mtime)}
-                checkR = requests.post(checkUploadURL, data=payload)
+            # check if needs to be uploaded
+            payload = {'file': filename, 'filesize': os.stat(fileToUpload).st_size, 'account': config['account'],
+                       'timestamp': int(os.stat(fileToUpload).st_mtime)}
+            checkR = requests.post(checkUploadURL, data=payload)
 
-                if checkR.text == "False" and not (config.keys().__contains__('forceMode') and config['forceMode']):
-                    filesFailed += 1
-                    if verbose:
-                        print("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). SKIP: " + f.name)
-                else:
-                    if checkR.text == "True" or (config.keys().__contains__('forceMode') and config['forceMode']):
-                        # actually upload it
-                        #r = requests.post(uploadURL, files={'file': f}, data={'account': config['account']})
-                        # Rework: client-side processing before upload
-                        directory = os.path.dirname(f.name)
-                        directory = (os.path.abspath(directory) + "/").replace("\\", "/")
-                        evtcFilesize = os.stat(directory + filename).st_size
-
-                        # adjust sample.conf in case someone fooled around with it
-                        try:
-                            samplef = open("GW2EI/Settings/sample.conf", "w")
-                            samplef.write(gw2EIconf)
-                            samplef.close()
-                        except:
-                            ctypes.windll.user32.MessageBoxW(0, "Could not locate GW2EI config. Please reinstall or contact admin.", "gw2Wingman Uploader", 0)
-                            sys.exit(1)
-
-                        GW2EIdir = (os.path.abspath('') + "/GW2EI").replace("\\", "/")
-                        args = '"'+GW2EIdir+'/GuildWars2EliteInsights.exe" -p -c "'+GW2EIdir+'/Settings/sample.conf" "' + directory + filename + '"'
-                        if verbose:
-                            print("run: " + args)
-                            before = datetime.datetime.now().timestamp() * 1000
-                        subprocess.run(args,shell=True)
-                        if verbose:
-                            print("GW2EI time: " + str(datetime.datetime.now().timestamp() * 1000 - before) + " ms")
-
-
-                        # look for result files
-                        resultFiles = [resFilename for resFilename in os.listdir(directory) if resFilename.startswith(filename.split(".")[0])]
-                        for rf in resultFiles:
-                            if rf.endswith(".log"):
-                                os.remove(directory + rf)
-                            if rf.endswith(".json"):
-                                with open(directory + rf, 'r', encoding='utf-8') as logFile:
-                                    try:
-                                        htmlfile = rf.replace(".json", ".html")
-                                        with open(directory + htmlfile, 'r', encoding='utf-8') as htmlF:
-                                            # actually upload the files
-                                            if config.keys().__contains__('forceMode'):
-                                                r = requests.post(uploadProcessedURL, files={'file': f, 'htmlfile': htmlF, 'jsonfile': logFile}, data={'account': config['account'], 'forceMode': config['forceMode']}, stream=True)
-                                            else:
-                                                r = requests.post(uploadProcessedURL, files={'file': f, 'htmlfile': htmlF, 'jsonfile': logFile}, data={'account': config['account']}, stream=True)
-
-                                            # TODO: only +1 if really uploaded! else "continue"
-                                            if r.text != "True":
-                                                print(r.text)
-                                                filesFailed += 1
-                                                continue
-
-                                            filesUploaded += 1
-                                            if verbose:
-                                                print("[" + str(int(100 * (filesUploaded + filesFailed) / len(filesToUpload))) + "%] (" + str(len(filesToUpload) - (filesUploaded + filesFailed)) + " left). DONE: " + f.name)
-                                    except:
-                                        print("FAILED to parse: " + directory + rf)
-                                        filesFailed += 1
-                                        os.remove(directory + htmlfile)
-                                        os.remove(directory + rf)
-                                        continue
-
-                                # delete afterwards
-                                os.remove(directory + htmlfile)
-                                os.remove(directory + rf)
-                    else:
-                        continue  # server error/unclear
-                # write update to blacklist file
-                blacklist['excludeFiles'].append(filename)
-                # if os.path.getmtime(fileToUpload) > blacklist['lastUpdate']:
-                #     blacklist['lastUpdate'] = os.path.getmtime(fileToUpload)
-                with open('wingmanUploader.exclude', 'w') as outfile:
-                    json.dump(blacklist, outfile)
-                sysTrayApp.changeMenuEntry("Status: "+ str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "% UPLOADING (" + str(len(filesToUpload)-(filesUploaded+filesFailed)) +" left)")
+            if checkR.text == "False" and not (config.keys().__contains__('forceMode') and config['forceMode']):
+                filesFailed += 1
                 if verbose:
-                    print(str(datetime.datetime.now()) + ": " + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "% UPLOADING (" + str(len(filesToUpload)-(filesUploaded+filesFailed)) +" left)")
-        except:
-            print("Something went wrong")
+                    print("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). SKIP: " + f.name)
+            else:
+                if checkR.text == "True":
+                    directory = os.path.dirname(f.name)
+                    directory = (os.path.abspath(directory) + "/").replace("\\", "/")
+
+                    # adjust sample.conf in case someone fooled around with it
+                    try:
+                        samplef = open("GW2EI/Settings/sample.conf", "w")
+                        samplef.write(getgw2EIconfNEWVERSION())
+                        samplef.close()
+                    except:
+                        ctypes.windll.user32.MessageBoxW(0, "Could not locate GW2EI config. Please reinstall or contact admin.", "gw2Wingman Uploader", 0)
+                        sys.exit(1)
+
+                    GW2EIdir = (os.path.abspath('') + "/GW2EI").replace("\\", "/")
+                    args = '"'+GW2EIdir+'/GuildWars2EliteInsights.exe" -p -c "'+GW2EIdir+'/Settings/sample.conf" "' + directory + filename + '"'
+                    if verbose:
+                        print("run: " + args)
+                        before = datetime.datetime.now().timestamp() * 1000
+                    subprocess.run(args,shell=True)
+                    if verbose:
+                        print("GW2EI time: " + str(datetime.datetime.now().timestamp() * 1000 - before) + " ms")
+                    filesUploaded += 1
+                    moveFile = True
+
+                else:
+                    continue  # server error/unclear. Dont remove from default folder to upload
+
+            sysTrayApp.changeMenuEntry("Status: "+ str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "% UPLOADING (" + str(len(filesToUpload)-(filesUploaded+filesFailed)) +" left)")
+            if verbose:
+                print(str(datetime.datetime.now()) + ": " + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "% UPLOADING (" + str(len(filesToUpload)-(filesUploaded+filesFailed)) +" left)")
+        if moveFile:
+            # move file to .uploaded #
+            newDir = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//", "/")
+            newDir = os.path.dirname(newDir)
+            print("newDir", newDir)
+
+            if not os.path.exists(newDir):
+                os.makedirs(newDir)
+            newPath = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//", "/")
+            print("after parsing: moving ", fileToUpload, "to", newPath)
+            os.rename(fileToUpload, newPath)
+        # except:
+        #     print("Something went wrong")
+
+    # tidy up after moving #
+    tidyUp(config['logpath'])
 
     if len(filesToUpload) > 0:
         tryNotification("Finished uploading.\r\n" + str(filesUploaded) + " new logs submitted.\r\n" + str(filesFailed) + " duplicates omitted.",False)
@@ -282,7 +324,7 @@ def startUploadingProcess():
 
     if verbose:
         print(str(datetime.datetime.now()) + ": Up to date.")
-    time.sleep(10)
+    time.sleep(getCheckInterval())
     rethreadUploadingProcess()
     return
 
@@ -340,9 +382,8 @@ if __name__ == '__main__':
     localEIversion = "v" + localEIversion
     EIrequest = requests.get(EIreleasesURL).json()
     recentEIversion = EIrequest[0]["name"]
-    # print("Compare:", localEIversion, recentEIversion, localEIversion==recentEIversion)
 
-    if not localEIversion==recentEIversion:
+    if not localEIversion==recentEIversion and not localEIversion == 'v2.64.0.0': # TODO: Remove after EI 64 release
         for asset in EIrequest[0]["assets"]:
             if asset["name"] == "GW2EI.zip":
                 assetURL = asset["browser_download_url"]
@@ -388,7 +429,7 @@ if __name__ == '__main__':
             if "Error" in versionR.text:
                 response = ctypes.windll.user32.MessageBoxW(0,"I was not able to reach the wingman server :( \r\nPlease try again later.","gw2Wingman Uploader", 1)
                 shutdown = True
-            elif versionR.text.replace("!","") != VERSION:
+            elif not VERSION in versionR.text.replace("!",""):
                 if not versionR.text.__contains__("!"):
                     response = ctypes.windll.user32.MessageBoxW(0,"A new version is available!\r\nPress OK to download the update and replace the wingmanUploader.exe","gw2Wingman Uploader", 1)
                     if response == 1: # OK
