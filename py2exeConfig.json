@@ -7,7 +7,7 @@
   },
   {
    "optionDest": "filenames",
-   "value": "C:/Users/Jo/PycharmProjects/DPBM/venv/wingman/wingmanUploader.py"
+   "value": "C:/wingmanUploader/wingmanUploader.py"
   },
   {
    "optionDest": "onefile",
@@ -19,7 +19,7 @@
   },
   {
    "optionDest": "icon_file",
-   "value": "D:/wingman/wingman/static/favicon.ico"
+   "value": "C:/wingmanUploader/favicon.ico"
   },
   {
    "optionDest": "ascii",
@@ -36,6 +36,14 @@
   {
    "optionDest": "noupx",
    "value": false
+  },
+  {
+   "optionDest": "disable_windowed_traceback",
+   "value": false
+  },
+  {
+   "optionDest": "embed_manifest",
+   "value": true
   },
   {
    "optionDest": "uac_admin",
@@ -59,7 +67,7 @@
   },
   {
    "optionDest": "datas",
-   "value": "C:/Users/Jo/PycharmProjects/DPBM/venv/wingman/sysTrayIcon.py;."
+   "value": "C:/wingmanUploader/sysTrayIcon.py;."
   }
  ],
  "nonPyinstallerOptions": {
