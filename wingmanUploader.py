@@ -22,7 +22,7 @@ import datetime
 import zipfile
 import io
 
-VERSION = "0.0.20"
+VERSION = "0.0.21"
 
 testURL = "http://nevermindcreations.de:3500/testMongoDB"
 versionURL = "http://nevermindcreations.de:3500/currentUploaderVersion"
