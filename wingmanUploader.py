@@ -39,7 +39,8 @@ initialConfig = {
     'onlyUploadIfGw2NotRunning': False,
     'notifications': False,
     'SaveOutTrace': False,
-    'checkIntervalSeconds': 10
+    'checkIntervalSeconds': 10,
+    # 'allowMovingLogFiles': False
     # 'forceMode': False,
 }
 
@@ -47,7 +48,7 @@ config = {}
 verbose = True
 notificationString = ""
 
-def getgw2EIconfNEWVERSION():
+def getgw2EIconf():
     conf = "SaveAtOut=false\n\
 OutLocation="+os.getcwd().replace("\\","/").replace("//","/")+"\n\
 ParseCombatReplay=true\n\
@@ -151,7 +152,42 @@ def startUploadingProcess():
     if not os.path.exists(os.path.join(config['logpath'], ".wingmanIgnore")):
         os.mkdir(os.path.join(config['logpath'], ".wingmanIgnore"))
     if os.path.exists('wingmanUploader.exclude'):
-        ctypes.windll.user32.MessageBoxW(0, "Your uploader still uses an .exclude file\r\nTo accelerate things and reduce reading/writing on your HDD, we reworked that system. \r\nThe uploader will now migrate your already uploaded logs into a folder called \".wingmanUploaded\" \r\nIf you ever want to re-upload a log, you can just move it back to the default folder.\r\nIf you want to prevent a log from being uploaded, you can also move it to .wingmanUploaded or .wingmanIgnore", "gw2Wingman Uploader", 0)
+        # response = ctypes.windll.user32.MessageBoxW(0,
+        #                                             "Your uploader still uses an .exclude file."
+        #                                             "\r\nTo accelerate things, save memory and reduce reading/writing on your HDD, we reworked that system."
+        #                                             "\r\n\r\nDo you want to allow the uploader to move files?"
+        #                                             "\r\nIn that case, logs that are finished uploading will be moved from (for example):"
+        #                                             "\r\n.../arcdps/arcdps.cbtlogs/Dhuum/Char/log.zevtc to"
+        #                                             "\r\n.../arcdps/arcdps.cbtlogs/.wingmanUploaded/Dhuum/Char/log.zevtc"
+        #                                             "\r\n\r\nThis will largely speed up searching for new logs. However, if you dont want me to change your folder structure, or if you are using other programs/tools that need the logs to stay in place, you can decline to moving logs."
+        #                                             "\r\nIn that case, I will memorize already uploaded logs through empty files, for example:"
+        #                                             "\r\n.../arcdps/arcdps.cbtlogs/.wingmanUploaded/Dhuum/Char/log.mem"
+        #                                             "\r\nThis is slower, since I still have to crawl over your log collection every time, but favorable to the old .exclude approach"
+        #                                             "\r\n\r\nYou can always change your choice in the .ini file"
+        #                                             "\r\nIf you ever want to re-upload a log, you can just move it back to the default folder (or delete the .mem file for it, respectively)."
+        #                                             "\r\n\r\nDo you want to allow me to move log files?"
+        #                                             "\r\n(Press Cancel to exit)", "gw2Wingman Uploader", 3)
+        # if response == 6:
+        #     print("Allowing uploader to move log files.")
+        #     config.update({"allowMovingLogFiles": True})
+        # elif response == 7:
+        #     print("Refusing uploader to move log files - create .mem files instead.")
+        #     config.update({"allowMovingLogFiles": False})
+        # elif response == 2:
+        #     print("Exiting instead of migrating.")
+        #     sys.exit(0)
+        # # Update .ini when making migrate choice
+        # with open('wingmanUploader.ini', 'w') as outfile:
+        #     json.dump(config, outfile, indent=4)
+
+        # Dont move files:
+        ctypes.windll.user32.MessageBoxW(0,
+                                        "Your uploader still uses an .exclude file."
+                                        "\r\nTo accelerate things and save memory, we reworked that system."
+                                        "\r\n\r\nThe uploader will now memorize your already uploaded logs in a folder called .wingmanUploaded"
+                                        "\r\n\r\nAlso, if you ever want to re-upload a log, you can just delete its corresponding .mem file, and I will try again."
+                                        , "gw2Wingman Uploader", 0)
+
         sysTrayApp.changeMenuEntry("Status: MIGRATING (0%)")
         try:
             with open('wingmanUploader.exclude', 'r', encoding='utf-8') as blacklistFile:
@@ -169,14 +205,20 @@ def startUploadingProcess():
                         if (not args.endswith(".zevtc") and not args.endswith(".evtc") and not args.endswith(".evtc.zip")) or os.path.getsize(args) < 100:
                             continue
                         if file in blacklist['excludeFiles']:
-                            # move to .uploaded
-                            newDir = os.path.join(config['logpath'], ".wingmanUploaded", args[len(config['logpath']):]).replace("\\","/").replace("//","/")
+                            # make new dir in .uploaded
+                            newDir = os.path.join(config['logpath'], ".wingmanUploaded",args[len(config['logpath']):]).replace("\\", "/").replace("//", "/")
                             newDir = os.path.dirname(newDir)
-
                             if not os.path.exists(newDir):
                                 os.makedirs(newDir)
-                            newPath = os.path.join(config['logpath'], ".wingmanUploaded", args[len(config['logpath']):]).replace("\\","/").replace("//","/")
-                            os.rename(args, newPath)
+
+                            # move to .uploaded (or create .mem)
+                            if config["allowMovingLogFiles"]:
+                                newPath = os.path.join(config['logpath'], ".wingmanUploaded", args[len(config['logpath']):]).replace("\\","/").replace("//","/")
+                                os.rename(args, newPath)
+                            else:
+                                memPath = os.path.join(config['logpath'], ".wingmanUploaded", args[len(config['logpath']):]).replace("\\","/").replace("//","/").replace(".zevtc",".mem")
+                                with open(memPath, 'a'):
+                                    print("Created memory for", memPath)
 
                             migratedI += 1
                             sysTrayApp.changeMenuEntry("Status: MIGRATING ("+str(migratedI)+"/"+str(excludeLen)+": "+str(int(100*migratedI/excludeLen))+"%)")
@@ -199,6 +241,11 @@ def startUploadingProcess():
             if os.path.getsize(args) < 100:  # skip small files
                 continue
             args = args.replace("//","/")
+            memPath = os.path.join(config['logpath'], ".wingmanUploaded", args[len(config['logpath']):]).replace("\\","/").replace("//","/").replace(".zevtc",".mem")
+            # check if its already memorized
+            if os.path.exists(memPath):
+                continue
+
             filesToUpload.append(args)
             fileTimes.append(os.path.getmtime(args))
 
@@ -278,7 +325,7 @@ def startUploadingProcess():
                     # adjust sample.conf in case someone fooled around with it
                     try:
                         samplef = open("GW2EI/Settings/sample.conf", "w")
-                        samplef.write(getgw2EIconfNEWVERSION())
+                        samplef.write(getgw2EIconf())
                         samplef.close()
                     except:
                         ctypes.windll.user32.MessageBoxW(0, "Could not locate GW2EI config. Please reinstall or contact admin.", "gw2Wingman Uploader", 0)
@@ -302,16 +349,21 @@ def startUploadingProcess():
             if verbose:
                 print(str(datetime.datetime.now()) + ": " + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "% UPLOADING (" + str(len(filesToUpload)-(filesUploaded+filesFailed)) +" left)")
         if moveFile:
-            # move file to .uploaded #
+            # move file to .uploaded (or create mem) #
             newDir = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//", "/")
             newDir = os.path.dirname(newDir)
             print("newDir", newDir)
-
             if not os.path.exists(newDir):
                 os.makedirs(newDir)
-            newPath = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//", "/")
-            print("after parsing: moving ", fileToUpload, "to", newPath)
-            os.rename(fileToUpload, newPath)
+
+            if config["allowMovingLogFiles"]:
+                newPath = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//", "/")
+                print("After parsing: moving ", fileToUpload, "to", newPath)
+                os.rename(fileToUpload, newPath)
+            else:
+                memPath = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//","/").replace(".zevtc",".mem")
+                with open(memPath, 'a'):
+                    print("After parsing: Created memory for", memPath)
         # except:
         #     print("Something went wrong")
 
@@ -376,27 +428,31 @@ if __name__ == '__main__':
     if not os.path.exists("favicon.ico"):
         ctypes.windll.user32.MessageBoxW(0, "Hey! It seems that you have lost 'favicon.ico'. Please put this in the same folder or download the uploader again.", "gw2Wingman Uploader", 0)
         sys.exit(1)
-    localEIversion = ""
-    if os.path.exists("GW2EI/GuildWars2EliteInsights.exe"):
-        localEIversion = Dispatch("Scripting.FileSystemObject").GetFileVersion("GW2EI/GuildWars2EliteInsights.exe")
-    localEIversion = "v" + localEIversion
-    EIrequest = requests.get(EIreleasesURL).json()
-    recentEIversion = EIrequest["name"]
 
-    if not localEIversion==recentEIversion:
-        for asset in EIrequest["assets"]:
-            if asset["name"] == "GW2EI.zip":
-                assetURL = asset["browser_download_url"]
-                print("download", asset["browser_download_url"])
-                eizip_r = requests.get(asset["browser_download_url"])
-                if not eizip_r.ok:
-                    ctypes.windll.user32.MessageBoxW(0, "I was unable to update the most recent Elite Insights version! You might want to report this.", "gw2Wingman Uploader", 0)
-                    sys.exit(1)
-                eizip = zipfile.ZipFile(io.BytesIO(eizip_r.content))
-                eizip.extractall("GW2EI")
-                # global notificationString
-                notificationString = "Updated EliteInsights version to " + recentEIversion + "."
-                break
+    try:
+        localEIversion = ""
+        if os.path.exists("GW2EI/GuildWars2EliteInsights.exe"):
+            localEIversion = Dispatch("Scripting.FileSystemObject").GetFileVersion("GW2EI/GuildWars2EliteInsights.exe")
+        localEIversion = "v" + localEIversion
+        EIrequest = requests.get(EIreleasesURL).json()
+        recentEIversion = EIrequest["name"]
+
+        if not localEIversion==recentEIversion:
+            for asset in EIrequest["assets"]:
+                if asset["name"] == "GW2EI.zip":
+                    assetURL = asset["browser_download_url"]
+                    print("download", asset["browser_download_url"])
+                    eizip_r = requests.get(asset["browser_download_url"])
+                    if not eizip_r.ok:
+                        ctypes.windll.user32.MessageBoxW(0, "I was unable to update the most recent Elite Insights version! You might want to report this.", "gw2Wingman Uploader", 0)
+                        sys.exit(1)
+                    eizip = zipfile.ZipFile(io.BytesIO(eizip_r.content))
+                    eizip.extractall("GW2EI")
+                    # global notificationString
+                    notificationString = "Updated EliteInsights version to " + recentEIversion + "."
+                    break
+    except:
+        print("Unable to update EI")
 
     icons = itertools.cycle(glob.glob('*.ico'))
     icon = next(icons)
