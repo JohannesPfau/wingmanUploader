@@ -39,7 +39,7 @@ initialConfig = {
     'onlyUploadIfGw2NotRunning': False,
     'notifications': False,
     'SaveOutTrace': False,
-    'checkIntervalSeconds': 10,
+    'checkIntervalSeconds': 10
     # 'allowMovingLogFiles': False
     # 'forceMode': False,
 }
@@ -145,6 +145,9 @@ def startUploadingProcess():
         time.sleep(10)
         rethreadUploadingProcess()
         return
+    if not "allowMovingLogFiles" in config:
+        config.update({"allowMovingLogFiles": False})
+
 
     # Legacy: if .exclude exists, move all handled files first #
     if not os.path.exists(os.path.join(config['logpath'], ".wingmanUploaded")):
@@ -368,7 +371,8 @@ def startUploadingProcess():
         #     print("Something went wrong")
 
     # tidy up after moving #
-    tidyUp(config['logpath'])
+    if config["allowMovingLogFiles"]:
+        tidyUp(config['logpath'])
 
     if len(filesToUpload) > 0:
         tryNotification("Finished uploading.\r\n" + str(filesUploaded) + " new logs submitted.\r\n" + str(filesFailed) + " duplicates omitted.",False)
