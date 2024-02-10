@@ -231,7 +231,7 @@ def startUploadingProcess():
                             else:
                                 memPath = os.path.join(config['logpath'], ".wingmanUploaded", args[len(config['logpath']):]).replace("\\","/").replace("//","/").replace(".zevtc",".mem")
                                 with open(memPath, 'a'):
-                                    debugLog("Created memory for", memPath)
+                                    debugLog("Created memory for" + memPath)
 
                             migratedI += 1
                             sysTrayApp.changeMenuEntry("Status: MIGRATING ("+str(migratedI)+"/"+str(excludeLen)+": "+str(int(100*migratedI/excludeLen))+"%)")
@@ -364,12 +364,12 @@ def startUploadingProcess():
 
             if config["allowMovingLogFiles"]:
                 newPath = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//", "/")
-                debugLog("After parsing: moving ", fileToUpload, "to", newPath)
+                debugLog("After parsing: moving "+ fileToUpload+ " to "+ newPath)
                 os.rename(fileToUpload, newPath)
             else:
                 memPath = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//","/").replace(".zevtc",".mem")
                 with open(memPath, 'a'):
-                    debugLog("After parsing: Created memory for", memPath)
+                    debugLog("After parsing: Created memory for " + memPath)
         # except:
         #     debugLog("Something went wrong")
 
@@ -447,7 +447,7 @@ if __name__ == '__main__':
             for asset in EIrequest["assets"]:
                 if asset["name"] == "GW2EI.zip":
                     assetURL = asset["browser_download_url"]
-                    debugLog("download", asset["browser_download_url"])
+                    debugLog("download " + asset["browser_download_url"])
                     eizip_r = requests.get(asset["browser_download_url"])
                     if not eizip_r.ok:
                         ctypes.windll.user32.MessageBoxW(0, "I was unable to update the most recent Elite Insights version! You might want to report this.", "gw2Wingman Uploader", 0)
