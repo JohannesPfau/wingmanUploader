@@ -39,7 +39,8 @@ initialConfig = {
     'onlyUploadIfGw2NotRunning': False,
     'notifications': False,
     'SaveOutTrace': False,
-    'checkIntervalSeconds': 10
+    'checkIntervalSeconds': 10,
+    'saveDebugLog': False
     # 'allowMovingLogFiles': False
     # 'forceMode': False,
 }
@@ -132,6 +133,16 @@ def tidyUp(root):
 
     return deleted
 
+def debugLog(message):
+    message = str(datetime.datetime.now()) + ": " + message
+    if verbose:
+        print(message)
+    if "saveDebugLog" in config and config["saveDebugLog"]:
+        with open("wingmanUploader.log", "a") as file:
+            file.write(message + "\n")
+
+    return
+
 def startUploadingProcess():
     global notificationString
     if notificationString:
@@ -140,8 +151,7 @@ def startUploadingProcess():
 
     if (config['onlyUploadIfGw2NotRunning'] and isGW2Running()) or (config['onlyUploadIfGw2Running'] and not isGW2Running()):
         sysTrayApp.changeMenuEntry("Status: SLEEPING")
-        if verbose:
-            print(str(datetime.datetime.now()) + ": Sleeping.")
+        debugLog("Sleeping.")
         time.sleep(10)
         rethreadUploadingProcess()
         return
@@ -171,13 +181,13 @@ def startUploadingProcess():
         #                                             "\r\n\r\nDo you want to allow me to move log files?"
         #                                             "\r\n(Press Cancel to exit)", "gw2Wingman Uploader", 3)
         # if response == 6:
-        #     print("Allowing uploader to move log files.")
+        #     debugLog("Allowing uploader to move log files.")
         #     config.update({"allowMovingLogFiles": True})
         # elif response == 7:
-        #     print("Refusing uploader to move log files - create .mem files instead.")
+        #     debugLog("Refusing uploader to move log files - create .mem files instead.")
         #     config.update({"allowMovingLogFiles": False})
         # elif response == 2:
-        #     print("Exiting instead of migrating.")
+        #     debugLog("Exiting instead of migrating.")
         #     sys.exit(0)
         # # Update .ini when making migrate choice
         # with open('wingmanUploader.ini', 'w') as outfile:
@@ -221,7 +231,7 @@ def startUploadingProcess():
                             else:
                                 memPath = os.path.join(config['logpath'], ".wingmanUploaded", args[len(config['logpath']):]).replace("\\","/").replace("//","/").replace(".zevtc",".mem")
                                 with open(memPath, 'a'):
-                                    print("Created memory for", memPath)
+                                    debugLog("Created memory for", memPath)
 
                             migratedI += 1
                             sysTrayApp.changeMenuEntry("Status: MIGRATING ("+str(migratedI)+"/"+str(excludeLen)+": "+str(int(100*migratedI/excludeLen))+"%)")
@@ -268,8 +278,7 @@ def startUploadingProcess():
             if not discMsgDisplayed:
                 tryNotification("Unable to connect to server.")
                 discMsgDisplayed = True
-            if verbose:
-                print(str(datetime.datetime.now()) + ": Disconnected.")
+            debugLog("Disconnected.")
             time.sleep(60)
             rethreadUploadingProcess()
             return
@@ -280,8 +289,7 @@ def startUploadingProcess():
 
     # upload new logs #
     if len(filesToUpload) > 0:
-        if verbose:
-            print("Checking " + str(len(filesToUpload)) + " new logs.")
+        debugLog("Checking " + str(len(filesToUpload)) + " new logs.")
         tryNotification("Checking " + str(len(filesToUpload)) + " new logs.",False)
     filesUploaded = 0
     filesFailed = 0
@@ -304,7 +312,7 @@ def startUploadingProcess():
                 # change reference
                 fileToUpload = newFile
             except:
-                print("Not able to zevtc")
+                debugLog("Not able to zevtc")
 
         # try:
         moveFile = False
@@ -318,8 +326,7 @@ def startUploadingProcess():
 
             if checkR.text == "False" and not (config.keys().__contains__('forceMode') and config['forceMode']):
                 filesFailed += 1
-                if verbose:
-                    print("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). SKIP: " + f.name)
+                debugLog("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). SKIP: " + f.name)
             else:
                 if checkR.text == "True":
                     directory = os.path.dirname(f.name)
@@ -336,12 +343,10 @@ def startUploadingProcess():
 
                     GW2EIdir = (os.path.abspath('') + "/GW2EI").replace("\\", "/")
                     args = '"'+GW2EIdir+'/GuildWars2EliteInsights.exe" -p -c "'+GW2EIdir+'/Settings/sample.conf" "' + directory + filename + '"'
-                    if verbose:
-                        print("run: " + args)
-                        before = datetime.datetime.now().timestamp() * 1000
+                    debugLog("run: " + args)
+                    before = datetime.datetime.now().timestamp() * 1000
                     subprocess.run(args,shell=True)
-                    if verbose:
-                        print("GW2EI time: " + str(datetime.datetime.now().timestamp() * 1000 - before) + " ms")
+                    debugLog("GW2EI time: " + str(datetime.datetime.now().timestamp() * 1000 - before) + " ms")
                     filesUploaded += 1
                     moveFile = True
 
@@ -349,26 +354,24 @@ def startUploadingProcess():
                     continue  # server error/unclear. Dont remove from default folder to upload
 
             sysTrayApp.changeMenuEntry("Status: "+ str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "% UPLOADING (" + str(len(filesToUpload)-(filesUploaded+filesFailed)) +" left)")
-            if verbose:
-                print(str(datetime.datetime.now()) + ": " + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "% UPLOADING (" + str(len(filesToUpload)-(filesUploaded+filesFailed)) +" left)")
+            debugLog(str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "% UPLOADING (" + str(len(filesToUpload)-(filesUploaded+filesFailed)) +" left)")
         if moveFile:
             # move file to .uploaded (or create mem) #
             newDir = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//", "/")
             newDir = os.path.dirname(newDir)
-            print("newDir", newDir)
             if not os.path.exists(newDir):
                 os.makedirs(newDir)
 
             if config["allowMovingLogFiles"]:
                 newPath = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//", "/")
-                print("After parsing: moving ", fileToUpload, "to", newPath)
+                debugLog("After parsing: moving ", fileToUpload, "to", newPath)
                 os.rename(fileToUpload, newPath)
             else:
                 memPath = os.path.join(config['logpath'], ".wingmanUploaded", fileToUpload[len(config['logpath']):]).replace("\\","/").replace("//","/").replace(".zevtc",".mem")
                 with open(memPath, 'a'):
-                    print("After parsing: Created memory for", memPath)
+                    debugLog("After parsing: Created memory for", memPath)
         # except:
-        #     print("Something went wrong")
+        #     debugLog("Something went wrong")
 
     # tidy up after moving #
     if config["allowMovingLogFiles"]:
@@ -378,8 +381,7 @@ def startUploadingProcess():
         tryNotification("Finished uploading.\r\n" + str(filesUploaded) + " new logs submitted.\r\n" + str(filesFailed) + " duplicates omitted.",False)
     sysTrayApp.changeMenuEntry("Status: UP TO DATE")
 
-    if verbose:
-        print(str(datetime.datetime.now()) + ": Up to date.")
+    debugLog("Up to date.")
     time.sleep(getCheckInterval())
     rethreadUploadingProcess()
     return
@@ -441,11 +443,11 @@ if __name__ == '__main__':
         EIrequest = requests.get(EIreleasesURL).json()
         recentEIversion = EIrequest["name"]
 
-        if not localEIversion==recentEIversion:
+        if not localEIversion == recentEIversion:
             for asset in EIrequest["assets"]:
                 if asset["name"] == "GW2EI.zip":
                     assetURL = asset["browser_download_url"]
-                    print("download", asset["browser_download_url"])
+                    debugLog("download", asset["browser_download_url"])
                     eizip_r = requests.get(asset["browser_download_url"])
                     if not eizip_r.ok:
                         ctypes.windll.user32.MessageBoxW(0, "I was unable to update the most recent Elite Insights version! You might want to report this.", "gw2Wingman Uploader", 0)
@@ -456,7 +458,7 @@ if __name__ == '__main__':
                     notificationString = "Updated EliteInsights version to " + recentEIversion + "."
                     break
     except:
-        print("Unable to update EI")
+        debugLog("Unable to update EI")
 
     icons = itertools.cycle(glob.glob('*.ico'))
     icon = next(icons)
@@ -500,15 +502,14 @@ if __name__ == '__main__':
                         os.startfile("https://gw2wingman.nevermindcreations.de/downloadUploader")
                     shutdown = True # dont shutdown in try block
         except:
-            print("no server connection")
+            debugLog("no server connection")
         if shutdown:
             sys.exit(0)
 
         notificationWindow = WindowsBalloonTip()
         tryCreateAutostart()
         sysTrayApp = SysTrayIcon(next(icons), "gw2wingman Uploader", menu_options, on_quit=bye, default_menu_index=1)
-        if verbose:
-            print(str(datetime.datetime.now()) + ": Startup")
+        debugLog("Startup")
         uploadThread = threading.Thread(target=startUploadingProcess)
         uploadThread.setDaemon(True)
         uploadThread.start()
