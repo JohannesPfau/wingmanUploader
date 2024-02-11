@@ -322,36 +322,41 @@ def startUploadingProcess():
             # check if needs to be uploaded
             payload = {'file': filename, 'filesize': os.stat(fileToUpload).st_size, 'account': config['account'],
                        'timestamp': int(os.stat(fileToUpload).st_mtime)}
-            checkR = requests.post(checkUploadURL, data=payload)
-
-            if checkR.text == "False" and not (config.keys().__contains__('forceMode') and config['forceMode']):
-                filesFailed += 1
-                debugLog("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). SKIP: " + f.name)
-            else:
-                if checkR.text == "True":
-                    directory = os.path.dirname(f.name)
-                    directory = (os.path.abspath(directory) + "/").replace("\\", "/")
-
-                    # adjust sample.conf in case someone fooled around with it
-                    try:
-                        samplef = open("GW2EI/Settings/sample.conf", "w")
-                        samplef.write(getgw2EIconf())
-                        samplef.close()
-                    except:
-                        ctypes.windll.user32.MessageBoxW(0, "Could not locate GW2EI config. Please reinstall or contact admin.", "gw2Wingman Uploader", 0)
-                        sys.exit(1)
-
-                    GW2EIdir = (os.path.abspath('') + "/GW2EI").replace("\\", "/")
-                    args = '"'+GW2EIdir+'/GuildWars2EliteInsights.exe" -p -c "'+GW2EIdir+'/Settings/sample.conf" "' + directory + filename + '"'
-                    debugLog("run: " + args)
-                    before = datetime.datetime.now().timestamp() * 1000
-                    subprocess.run(args,shell=True)
-                    debugLog("GW2EI time: " + str(datetime.datetime.now().timestamp() * 1000 - before) + " ms")
-                    filesUploaded += 1
-                    moveFile = True
-
+            try:
+                checkR = requests.post(checkUploadURL, data=payload)
+                if checkR.text == "False" and not (config.keys().__contains__('forceMode') and config['forceMode']):
+                    filesFailed += 1
+                    debugLog("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). SKIP: " + f.name)
                 else:
-                    continue  # server error/unclear. Dont remove from default folder to upload
+                    if checkR.text == "True":
+                        directory = os.path.dirname(f.name)
+                        directory = (os.path.abspath(directory) + "/").replace("\\", "/")
+
+                        # adjust sample.conf in case someone fooled around with it
+                        try:
+                            samplef = open("GW2EI/Settings/sample.conf", "w")
+                            samplef.write(getgw2EIconf())
+                            samplef.close()
+                        except:
+                            ctypes.windll.user32.MessageBoxW(0, "Could not locate GW2EI config. Please reinstall or contact admin.", "gw2Wingman Uploader", 0)
+                            sys.exit(1)
+
+                        GW2EIdir = (os.path.abspath('') + "/GW2EI").replace("\\", "/")
+                        args = '"'+GW2EIdir+'/GuildWars2EliteInsights.exe" -p -c "'+GW2EIdir+'/Settings/sample.conf" "' + directory + filename + '"'
+                        debugLog("run: " + args)
+                        before = datetime.datetime.now().timestamp() * 1000
+                        subprocess.run(args,shell=True)
+                        debugLog("GW2EI time: " + str(datetime.datetime.now().timestamp() * 1000 - before) + " ms")
+                        filesUploaded += 1
+                        moveFile = True
+                    else:
+                        debugLog("Unable to upload, Server response: " + checkR.text)
+                        continue  # server error/unclear. Dont remove from default folder to upload
+            except:
+                # If no connection to checkUploadURL can be made, the wingman server is probably restarting
+                filesFailed += 1
+                debugLog("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). UPLOAD FAILED: " + f.name + " (trying again next time)")
+                time.sleep(60)
 
             sysTrayApp.changeMenuEntry("Status: "+ str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "% UPLOADING (" + str(len(filesToUpload)-(filesUploaded+filesFailed)) +" left)")
             debugLog(str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "% UPLOADING (" + str(len(filesToUpload)-(filesUploaded+filesFailed)) +" left)")
