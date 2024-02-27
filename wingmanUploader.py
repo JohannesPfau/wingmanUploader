@@ -22,13 +22,14 @@ import datetime
 import zipfile
 import io
 
-VERSION = "0.0.21"
+VERSION = "0.0.22"
 
 testURL = "http://nevermindcreations.de:3500/testMongoDB"
 versionURL = "http://nevermindcreations.de:3500/currentUploaderVersion"
 # uploadURL = "http://nevermindcreations.de:3500/upload"
 uploadProcessedURL = "http://nevermindcreations.de:3500/uploadProcessed"
 checkUploadURL = "http://nevermindcreations.de:3500/checkUpload"
+checkUploadSuccessfulURL = "http://nevermindcreations.de:3500/checkUploadSuccessful"
 EIreleasesURL = "https://api.github.com/repos/baaron4/GW2-Elite-Insights-Parser/releases/latest"
 
 initialConfig = {
@@ -320,38 +321,55 @@ def startUploadingProcess():
             filename = os.path.basename(f.name)
 
             # check if needs to be uploaded
-            payload = {'file': filename, 'filesize': os.stat(fileToUpload).st_size, 'account': config['account'],
-                       'timestamp': int(os.stat(fileToUpload).st_mtime)}
+            # payload = {'file': filename, 'filesize': os.stat(fileToUpload).st_size, 'account': config['account'],
+            #            'timestamp': int(os.stat(fileToUpload).st_mtime)}
             try:
-                checkR = requests.post(checkUploadURL, data=payload)
-                if checkR.text == "False" and not (config.keys().__contains__('forceMode') and config['forceMode']):
-                    filesFailed += 1
-                    debugLog("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). SKIP: " + f.name)
+                # Rework: Dont check before (bc EI does), but check after
+                # checkR = requests.post(checkUploadURL, data=payload)
+                # if checkR.text == "False" and not (config.keys().__contains__('forceMode') and config['forceMode']):
+                #     filesFailed += 1
+                #     debugLog("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). SKIP: " + f.name)
+                # else:
+                #     if checkR.text == "True":
+                directory = os.path.dirname(f.name)
+                directory = (os.path.abspath(directory) + "/").replace("\\", "/")
+
+                # adjust sample.conf in case someone fooled around with it
+                try:
+                    samplef = open("GW2EI/Settings/sample.conf", "w")
+                    samplef.write(getgw2EIconf())
+                    samplef.close()
+                except:
+                    ctypes.windll.user32.MessageBoxW(0, "Could not locate GW2EI config. Please reinstall or contact admin.", "gw2Wingman Uploader", 0)
+                    sys.exit(1)
+
+                GW2EIdir = (os.path.abspath('') + "/GW2EI").replace("\\", "/")
+                args = '"'+GW2EIdir+'/GuildWars2EliteInsights.exe" -p -c "'+GW2EIdir+'/Settings/sample.conf" "' + directory + filename + '"'
+                debugLog("run: " + args)
+                before = datetime.datetime.now().timestamp() * 1000
+                subprocess.run(args,shell=True)
+                debugLog("GW2EI time: " + str(datetime.datetime.now().timestamp() * 1000 - before) + " ms")
+                # Rework: Dont check before (bc EI does), but check after
+                debugLog("checking /checkUploadSuccessful")
+                try:
+                    payload = {'file': filename, 'filesize': os.stat(fileToUpload).st_size, 'bossFolder': os.path.basename(os.path.dirname(os.path.dirname(fileToUpload))), 'bossFolderAlt': os.path.basename(os.path.dirname(fileToUpload)), 'bossFolderAlt2': os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(fileToUpload)))) }
+                    debugLog(str(payload))
+                except:
+                    ctypes.windll.user32.MessageBoxW(0, "Error with directory structure. Contact wingman admin for help.", "gw2Wingman Uploader", 0)
+                    sys.exit(1)
+                checkR = requests.post(checkUploadSuccessfulURL, data=payload)
+                debugLog("/checkUploadSuccessful: "+str(checkR.text))
+                if checkR.text == "True":
+                    filesUploaded += 1
+                    moveFile = True
                 else:
-                    if checkR.text == "True":
-                        directory = os.path.dirname(f.name)
-                        directory = (os.path.abspath(directory) + "/").replace("\\", "/")
+                    filesFailed += 1
+                    debugLog("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). UPLOAD UNSUCCESSFUL: " + f.name + " (trying again next time)")
+                    time.sleep(60)
 
-                        # adjust sample.conf in case someone fooled around with it
-                        try:
-                            samplef = open("GW2EI/Settings/sample.conf", "w")
-                            samplef.write(getgw2EIconf())
-                            samplef.close()
-                        except:
-                            ctypes.windll.user32.MessageBoxW(0, "Could not locate GW2EI config. Please reinstall or contact admin.", "gw2Wingman Uploader", 0)
-                            sys.exit(1)
-
-                        GW2EIdir = (os.path.abspath('') + "/GW2EI").replace("\\", "/")
-                        args = '"'+GW2EIdir+'/GuildWars2EliteInsights.exe" -p -c "'+GW2EIdir+'/Settings/sample.conf" "' + directory + filename + '"'
-                        debugLog("run: " + args)
-                        before = datetime.datetime.now().timestamp() * 1000
-                        subprocess.run(args,shell=True)
-                        debugLog("GW2EI time: " + str(datetime.datetime.now().timestamp() * 1000 - before) + " ms")
-                        filesUploaded += 1
-                        moveFile = True
-                    else:
-                        debugLog("Unable to upload, Server response: " + checkR.text)
-                        continue  # server error/unclear. Dont remove from default folder to upload
+            # else:
+            #     debugLog("Unable to upload, Server response: " + checkR.text)
+            #     continue  # server error/unclear. Dont remove from default folder to upload
             except:
                 # If no connection to checkUploadURL can be made, the wingman server is probably restarting
                 filesFailed += 1
