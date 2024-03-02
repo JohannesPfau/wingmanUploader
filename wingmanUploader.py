@@ -22,7 +22,7 @@ import datetime
 import zipfile
 import io
 
-VERSION = "0.0.22"
+VERSION = "0.0.24"
 
 testURL = "http://nevermindcreations.de:3500/testMongoDB"
 versionURL = "http://nevermindcreations.de:3500/currentUploaderVersion"
@@ -49,6 +49,7 @@ initialConfig = {
 config = {}
 verbose = True
 notificationString = ""
+tempBlacklist = []
 
 def getgw2EIconf():
     conf = "SaveAtOut=false\n\
@@ -254,6 +255,8 @@ def startUploadingProcess():
                 continue
             if os.path.getsize(args) < 100:  # skip small files
                 continue
+            if file in tempBlacklist:
+                continue
             args = args.replace("//","/")
             memPath = os.path.join(config['logpath'], ".wingmanUploaded", args[len(config['logpath']):]).replace("\\","/").replace("//","/").replace(".zevtc",".mem")
             # check if its already memorized
@@ -352,7 +355,8 @@ def startUploadingProcess():
                 # Rework: Dont check before (bc EI does), but check after
                 debugLog("checking /checkUploadSuccessful")
                 try:
-                    payload = {'file': filename, 'filesize': os.stat(fileToUpload).st_size, 'bossFolder': os.path.basename(os.path.dirname(os.path.dirname(fileToUpload))), 'bossFolderAlt': os.path.basename(os.path.dirname(fileToUpload)), 'bossFolderAlt2': os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(fileToUpload)))) }
+                    # payload = {'file': filename, 'filesize': os.stat(fileToUpload).st_size, 'bossFolder': os.path.basename(os.path.dirname(os.path.dirname(fileToUpload))), 'bossFolderAlt': os.path.basename(os.path.dirname(fileToUpload)), 'bossFolderAlt2': os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(fileToUpload)))) }
+                    payload = {'file': filename, 'filesize': os.stat(fileToUpload).st_size, 'bossID': readEVTCheader(fileToUpload) }
                     debugLog(str(payload))
                 except:
                     ctypes.windll.user32.MessageBoxW(0, "Error with directory structure. Contact wingman admin for help.", "gw2Wingman Uploader", 0)
@@ -364,8 +368,9 @@ def startUploadingProcess():
                     moveFile = True
                 else:
                     filesFailed += 1
-                    debugLog("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). UPLOAD UNSUCCESSFUL: " + f.name + " (trying again next time)")
-                    time.sleep(60)
+                    debugLog("[" + str(int(100*(filesUploaded+filesFailed)/len(filesToUpload))) + "%] ("+str(len(filesToUpload)-(filesUploaded+filesFailed))+" left). UPLOAD UNSUCCESSFUL: " + f.name + " (trying again next restart)")
+                    # time.sleep(60)
+                    tempBlacklist.append(filename)
 
             # else:
             #     debugLog("Unable to upload, Server response: " + checkR.text)
@@ -434,6 +439,16 @@ def tryNotification(message, forceNotification):
         notificationThread.setDaemon(True)
         notificationThread.start()
     return
+
+def readEVTCheader(filepath):
+    binaryFilename = filepath.split("/")[-1:][0].replace(".zevtc","")
+
+    try:
+        with zipfile.ZipFile(filepath, 'r') as zip_ref:
+            with zip_ref.open(binaryFilename, 'r') as binary_file:
+                return int.from_bytes(binary_file.read()[13:15], byteorder='little', signed=False)
+    except:
+        return -1
 
 def isGW2Running():
     procs = [p for p in psutil.process_iter() if 'Gw2.exe' in p.name() or 'Gw2-64.exe' in p.name()or 'Gw2-32.exe' in p.name()]
